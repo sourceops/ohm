@@ -1,22 +1,26 @@
 Ohm
 ===
 
-[Ohm](https://github.com/cdglabs/ohm) is a library and domain-specific language for parsing and
-pattern matching. You can use it to parse custom file formats, transform complex data structures,
-and quickly build parsers, interpreters, and compilers for programming languages. The _Ohm language_
-is based on [parsing expression grammars](http://en.wikipedia.org/wiki/Parsing_expression_grammar)
+[![Build Status](https://img.shields.io/travis/cdglabs/ohm.svg?style=flat-square)](https://travis-ci.org/cdglabs/ohm) 
+[![NPM](https://img.shields.io/npm/v/ohm-js.svg?style=flat-square)](https://www.npmjs.com/package/ohm-js)
+
+[Ohm](https://github.com/cdglabs/ohm) is a parser generator consisting of a library and a domain-specific language.
+You can use it to parse custom file formats or quickly build parsers, interpreters, and compilers for programming languages. The _Ohm language_ is based on [parsing expression grammars](http://en.wikipedia.org/wiki/Parsing_expression_grammar)
 (PEGs), which are a formal way of describing syntax, similar to regular expressions and context-free
 grammars. The _Ohm library_ provides a JavaScript interface (known as Ohm/JS) for creating parsers,
 interpreters, and more from the grammars you write.
 
 Like its older sibling [OMeta](http://tinlizzie.org/ometa/), Ohm supports object-oriented grammar
-extension and allows pattern matching on structured data as well as strings. One thing that
-distinguishes Ohm from other parsing tools is that it completely separates grammars from semantic
-actions. In Ohm, a grammar defines a language, and semantic actions specify what to do with valid
-inputs in that language. Semantic actions are written in the _host language_ -- e.g., for Ohm/JS,
-the host language is JavaScript. Ohm grammars, on the other hand, work without modification in any
-host language. This separation improves modularity, and makes both grammars and semantic actions
-easier to read and understand. _(More on the Ohm philosophy [here](doc/philosophy.md).)_
+extension. One thing that distinguishes Ohm from other parsing tools is that it completely
+separates grammars from semantic actions. In Ohm, a grammar defines a language, and semantic
+actions specify what to do with valid inputs in that language. Semantic actions are written in the
+_host language_ -- e.g., for Ohm/JS, the host language is JavaScript. Ohm grammars, on the other
+hand, work without modification in any host language. This separation improves modularity, and
+makes both grammars and semantic actions easier to read and understand. Currently, JavaScript is
+the only host language, but as the API stabilizes, we hope to have implementations for other
+languages.
+
+Learn more about the Ohm philosophy [here](doc/philosophy.md).
 
 Getting Started
 ---------------
@@ -35,7 +39,7 @@ The easiest way to get started with Ohm is to play with one of the following exa
 
 ### Installation
 
-For use in the browser: 
+For use in the browser:
 
 -  Download [ohm.js](https://cdglabs.github.io/ohm/dist/ohm.js) (development version, with full source and comments) or [ohm.min.js](https://cdglabs.github.io/ohm/dist/ohm.min.js) (a minified version for faster page loads).
 -  Add a new script tag to your page, and set the `src` attribute to the path of the file you just downloaded. E.g.:
@@ -86,7 +90,7 @@ you can define an Ohm grammar:
     </script>
     ```
 
-- **Recommended with Node.js:** Define the grammar in a separate file, and instantiate it using `ohm.grammarFromFile()`:
+- **Recommended with Node.js:** Define the grammar in a separate file, read the file's contents and instantiate it using `ohm.grammar(contents)`:
 
     In `myGrammar.ohm`:
 
@@ -97,7 +101,9 @@ you can define an Ohm grammar:
     In JavaScript:
 
     ```js
-    var myGrammar = ohm.grammarFromFile('myGrammar.ohm');
+    var fs = require('fs');
+    var contents = fs.readFileSync('myGrammar.ohm');
+    var myGrammar = ohm.grammar(contents);
     ```
 
 For more information, see [Instantiating Grammars](doc/api-reference.md#instantiating-grammars) in the API reference.
@@ -136,7 +142,7 @@ visualizer is still under development (i.e., it might be buggy!) but it can stil
 
 [![Ohm Visualizer](http://www.cdglabs.org/ohm/doc/images/visualizer-small.png)](http://www.cdglabs.org/ohm/visualizer/)
 
-You can [try the visualizer online](http://www.cdglabs.org/ohm/visualizer/), or if you have an Ohm checkout, open `visualizer/index.html` in your web browser.
+You can [try the visualizer online](https://ohmlang.github.io/editor), or if you have an Ohm checkout, open `visualizer/index.html` in your web browser.
 
 To see the text trace for a grammar `g`, just use the [`g.trace()`](./doc/api-reference.md#trace)
 method instead of `g.match`. It takes the same arguments, but instead of returning a MatchResult
@@ -167,11 +173,17 @@ b                    ✓ Unicode {Ll} character ⇒  "b"
                      ✗ Unicode {Lu} character
                    ✗ unicodeLtmo
                      ✗ Unicode {Ltmo} character
-             ✓ end ⇒  ""
+           ✓ end ⇒  ""
 ```
 
-Contributing
-------------
+Publishing Grammars
+-------------------
+
+If you've written an Ohm grammar that you'd like to share with others, see
+our [suggestions for publishing grammars](./doc/publishing-grammars.md).
+
+Contributing to Ohm
+-------------------
 
 All you need to get started:
 

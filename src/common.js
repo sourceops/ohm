@@ -16,8 +16,8 @@ var escapeStringFor = {};
 for (var c = 0; c < 128; c++) {
   escapeStringFor[c] = String.fromCharCode(c);
 }
-escapeStringFor["'".charCodeAt(0)]  = "\\'";
-escapeStringFor['"'.charCodeAt(0)]  = '\\"';
+escapeStringFor["'".charCodeAt(0)] = "\\'";
+escapeStringFor['"'.charCodeAt(0)] = '\\"';
 escapeStringFor['\\'.charCodeAt(0)] = '\\\\';
 escapeStringFor['\b'.charCodeAt(0)] = '\\b';
 escapeStringFor['\f'.charCodeAt(0)] = '\\f';
@@ -30,10 +30,13 @@ escapeStringFor['\u000b'.charCodeAt(0)] = '\\v';
 // Exports
 // --------------------------------------------------------------------
 
-exports.abstract = function() {
-  throw new Error(
-      'this method is abstract! ' +
+exports.abstract = function(optMethodName) {
+  var methodName = optMethodName || '';
+  return function() {
+    throw new Error(
+      'this method ' + methodName + ' is abstract! ' +
       '(it has no implementation in class ' + this.constructor.name + ')');
+  };
 };
 
 exports.assert = function(cond, message) {
@@ -93,11 +96,23 @@ exports.getDuplicates = function(array) {
   return duplicates;
 };
 
-exports.fail = {};
+exports.copyWithoutDuplicates = function(array) {
+  var noDuplicates = [];
+  array.forEach(function(entry) {
+    if (noDuplicates.indexOf(entry) < 0) {
+      noDuplicates.push(entry);
+    }
+  });
+  return noDuplicates;
+};
 
 exports.isSyntactic = function(ruleName) {
   var firstChar = ruleName[0];
-  return ('A' <= firstChar && firstChar <= 'Z');
+  return firstChar === firstChar.toUpperCase();
+};
+
+exports.isLexical = function(ruleName) {
+  return !exports.isSyntactic(ruleName);
 };
 
 exports.padLeft = function(str, len, optChar) {
@@ -148,7 +163,7 @@ exports.unescapeChar = function(s) {
       case 'v': return '\v';
       case 'x': return String.fromCharCode(parseInt(s.substring(2, 4), 16));
       case 'u': return String.fromCharCode(parseInt(s.substring(2, 6), 16));
-      default:   return s.charAt(1);
+      default: return s.charAt(1);
     }
   } else {
     return s;

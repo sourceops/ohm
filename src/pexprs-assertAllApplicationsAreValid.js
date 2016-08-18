@@ -19,11 +19,13 @@ pexprs.PExpr.prototype.assertAllApplicationsAreValid = function(ruleName, gramma
   this._assertAllApplicationsAreValid(ruleName, grammar);
 };
 
-pexprs.PExpr.prototype._assertAllApplicationsAreValid = common.abstract;
+pexprs.PExpr.prototype._assertAllApplicationsAreValid = common.abstract(
+  '_assertAllApplicationsAreValid'
+);
 
-pexprs.anything._assertAllApplicationsAreValid =
+pexprs.any._assertAllApplicationsAreValid =
 pexprs.end._assertAllApplicationsAreValid =
-pexprs.Prim.prototype._assertAllApplicationsAreValid =
+pexprs.Terminal.prototype._assertAllApplicationsAreValid =
 pexprs.Range.prototype._assertAllApplicationsAreValid =
 pexprs.Param.prototype._assertAllApplicationsAreValid =
 pexprs.UnicodeChar.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
@@ -50,44 +52,36 @@ pexprs.Seq.prototype._assertAllApplicationsAreValid = function(ruleName, grammar
 
 pexprs.Iter.prototype._assertAllApplicationsAreValid =
 pexprs.Not.prototype._assertAllApplicationsAreValid =
-pexprs.Lookahead.prototype._assertAllApplicationsAreValid =
-pexprs.Arr.prototype._assertAllApplicationsAreValid =
-pexprs.Str.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
+pexprs.Lookahead.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
   this.expr._assertAllApplicationsAreValid(ruleName, grammar);
 };
 
-pexprs.Obj.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
-  for (var idx = 0; idx < this.properties.length; idx++) {
-    this.properties[idx].pattern._assertAllApplicationsAreValid(ruleName, grammar);
-  }
-};
-
 pexprs.Apply.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
-  var body = grammar.ruleDict[this.ruleName];
+  var ruleInfo = grammar.rules[this.ruleName];
 
-  // Make sure that the rule exists
-  if (!body) {
-    throw new errors.UndeclaredRule(this.ruleName, grammar.name, this);
+  // Make sure that the rule exists...
+  if (!ruleInfo) {
+    throw errors.undeclaredRule(this.ruleName, grammar.name, this.source);
   }
 
-  // ... and that this application is allowed
+  // ...and that this application is allowed
   if (common.isSyntactic(this.ruleName) && (!common.isSyntactic(ruleName) || lexifyCount > 0)) {
-    throw new errors.ApplicationOfSyntacticRuleFromLexicalContext(this.ruleName, this);
+    throw errors.applicationOfSyntacticRuleFromLexicalContext(this.ruleName, this);
   }
 
-  // ... and that this application has the correct number of parameters
-  var actual = this.params.length;
-  var expected = body.formals.length;
+  // ...and that this application has the correct number of arguments
+  var actual = this.args.length;
+  var expected = ruleInfo.formals.length;
   if (actual !== expected) {
-    throw new errors.WrongNumberOfParameters(this.ruleName, expected, actual, this);
+    throw errors.wrongNumberOfArguments(this.ruleName, expected, actual, this);
   }
 
-  // ... and that all of the parameter expressions only have valid applications and have arity 1
+  // ...and that all of the argument expressions only have valid applications and have arity 1.
   var self = this;
-  this.params.forEach(function(param) {
-    param._assertAllApplicationsAreValid(ruleName, grammar);
-    if (param.getArity() !== 1) {
-      throw new errors.InvalidParameter(self.ruleName, param);
+  this.args.forEach(function(arg) {
+    arg._assertAllApplicationsAreValid(ruleName, grammar);
+    if (arg.getArity() !== 1) {
+      throw errors.invalidParameter(self.ruleName, arg);
     }
   });
 };

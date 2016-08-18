@@ -7,15 +7,18 @@
 EXEC_NAME=$(basename $0)
 ROOT=$(npm prefix)
 
-# If .gitignore does not exist, we are not in developer mode.
-# See .npmignore for more details.
-if [ ! -f "$ROOT/.gitignore" ]; then exit; fi
-
 GIT_DIR=$(git rev-parse --git-dir 2> /dev/null)
 
 if [ "$GIT_DIR" == "" ]; then
   echo "$EXEC_NAME: Unable to find .git directory."
   exit 1
+fi
+
+# `npm prefix` should always point to the ohm-js directory. Only install the hooks
+# if the Git top level is the same.
+if [ "$(git rev-parse --show-toplevel)" != "$ROOT" ]; then
+  echo "$EXEC_NAME: Not installing hooks -- Git top level != npm prefix"
+  exit 0
 fi
 
 # Install a merge driver called "ours" that is just an alias to `true`.

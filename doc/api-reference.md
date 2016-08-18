@@ -14,10 +14,6 @@ Instantiate the Grammar defined by `source`. If specified, `optNamespace` is the
 
 Convenience method for creating a Grammar instance from the contents of a `<script>` tag. `optNode`, if specified, is a script tag with the attribute `type="text/ohm-js"`. If it is not specified, the result of `document.querySelector(script[type="text/ohm-js"])` will be used instead. `optNamespace` has the same meaning as in `ohm.grammar`.
 
-<b><pre class="api">ohm.grammarFromFile(filename: string, optNamespace?: object) &rarr; Grammar</pre></b>
-
-Convenience method for creating a Grammar instance from the contents of the file specified by `filename`. `optNamespace` has the same meaning as in `ohm.grammar`. Not available when running in a browser.
-
 <b><pre class="api">ohm.grammars(source: string, optNamespace?: object) &rarr; Namespace</pre></b>
 
 Create a new Namespace containing Grammar instances for all of the grammars defined in `source`. If `optNamespace` is specified, it will be the prototype of the new Namespace.
@@ -25,10 +21,6 @@ Create a new Namespace containing Grammar instances for all of the grammars defi
 <b><pre class="api">ohm.grammarsFromScriptElements(optNodeList?: NodeList, optNamespace?: object) &rarr; Namespace</pre></b>
 
 Create a new Namespace containing Grammar instances for all of the grammars defined in the `<script>` tags in `optNodeList`. If `optNodeList` is not specified, the result of `document.querySelectorAll('script[type="text/ohm-js"]')` will be used. `optNamespace` has the same meaning as in `ohm.grammars`.
-
-<b><pre class="api">ohm.grammarsFromFile(filename: string, optNamespace?: object) &rarr; Namespace</pre></b>
-
-Create a new Namespace containing Grammar instances for all of the grammars defined in the file specified by `filename`. `optNamespace` has the same meaning as in `ohm.grammars`. Not available when running in a browser.
 
 Namespace objects
 -----------------
@@ -56,7 +48,7 @@ Try to match `obj` against `g`, returning a MatchResult. If `optStartRule` is gi
 
 Try to match `obj` against `g`, returning a Trace object. `optNamespace` has the same meaning as in `ohm.grammar`. Trace objects have a `toString()` method, which returns a string which summarizes each parsing step (useful for debugging).
 
-<b><pre class="api">g.semantics() &rarr; Semantics</pre></b>
+<b><pre class="api">g.createSemantics() &rarr; Semantics</pre></b>
 
 Create a new [Semantics](#semantics) object for `g`.
 
@@ -153,7 +145,7 @@ A set of semantic actions for this grammar might look like this:
   // so that we can be sure that the code actually works.
   markscript.transformNextBlock(function(code) {
     return code.replace('...', "return lastName.x().toUpperCase() + ', ' + firstName.x()")
-               .replace('...', "return this.interval.contents;")
+               .replace('...', "return this.sourceString;")
   });
 </script>
 
@@ -166,7 +158,7 @@ var actions = {
 
 <script type="text/markscript">
   // Verify that the action dict actually works.
-  var semantics = g.semantics().addOperation('x', actions);
+  var semantics = g.createSemantics().addOperation('x', actions);
   assert.equal(semantics(g.match('Guy Incognito')).x(), 'INCOGNITO, Guy');
 </script>
 
@@ -175,8 +167,8 @@ The value of an operation or attribute for a node is the result of invoking the 
 The matching semantic action for a particular node is chosen as follows:
 
 - On a _rule application_ node, first look for a semantic action with the same name as the rule (e.g., 'FullName'). If the action dictionary does not have a property with that name, use the action named '_nonterminal', if it exists. If not, the default action is used, which returns the result of applying the operation or attribute to the node's only child. There is no default action for non-terminal nodes that have no children, or more than one child.
-- On a terminal node (e.g., a node produced by the parsing expression `"-"`), use the semantic action named '_terminal'. If the action dictionary does not have a property with that name, the default action returns the node's *primitive value*.
-- On an iteration node (e.g., a node produced by the parsing expression `(letter | "-" | ".")+`), use the semantic action named '_iter'. If the action dictionary does not have a property with that name, the default action returns an array containing the results of applying the operation or attribute to each child node.
+- On a terminal node (e.g., a node produced by the parsing expression `"hello"`), use the semantic action named '_terminal'.
+- On an iteration node (e.g., a node produced by the parsing expression `letter+`), use the semantic action named '_iter'. If the action dictionary does not have a property with that name, the default action returns an array containing the results of applying the operation or attribute to each child node.
 
 ### Parse Nodes
 
@@ -204,13 +196,21 @@ An array containing the node's children.
 
 The name of grammar rule that created the node.
 
-<b><pre class="api">n.interval: Interval</pre></b>
+<b><pre class="api">n.source: Interval</pre></b>
 
 Captures the portion of the input that was consumed by the node.
 
 <b><pre class="api">n.numChildren: number</pre></b>
 
 The number of child nodes that the node has.
+
+<b><pre class="api">n.isOptional() &rarr; boolean</pre></b>
+
+`true` if the node is an iterator node having either one or no child (? operator), otherwise `false`.
+
+<b><pre class="api">n.primitiveValue: number|string|...</pre></b>
+
+For a terminal node, the raw value that was consumed from the input stream.
 
 #### Operations and Attributes
 

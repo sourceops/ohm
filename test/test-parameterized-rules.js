@@ -8,7 +8,6 @@
 
 var test = require('tape-catch');
 
-var errors = require('../src/errors');
 var testUtil = require('./testUtil');
 
 // --------------------------------------------------------------------
@@ -18,21 +17,21 @@ var testUtil = require('./testUtil');
 test('require same number of params when overriding and extending', function(t) {
   var ns = testUtil.makeGrammars('G { Foo<x, y> = x y }');
 
-  // Too few arguments
+  // Too few parameters
   t.throws(
       function() { testUtil.makeGrammar('G2 <: G { Foo<x> := "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      /Wrong number of parameters for rule Foo \(expected 2, got 1\)/);
   t.throws(
       function() { testUtil.makeGrammar('G2 <: G { Foo<x> += "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      /Wrong number of parameters for rule Foo \(expected 2, got 1\)/);
 
-  // Too many arguments
+  // Too many parameters
   t.throws(
       function() { testUtil.makeGrammar('G2 <: G { Foo<x, y, z> := "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      /Wrong number of parameters for rule Foo \(expected 2, got 3\)/);
   t.throws(
       function() { testUtil.makeGrammar('G2 <: G { Foo<x, y, z> += "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      /Wrong number of parameters for rule Foo \(expected 2, got 3\)/);
 
   // Just right
   t.ok(testUtil.makeGrammar('G2 <: G { Foo<x, y> := "yay!" }', ns));
@@ -40,14 +39,14 @@ test('require same number of params when overriding and extending', function(t) 
   t.end();
 });
 
-test('require same number of params when applying', function(t) {
+test('require same number of args when applying', function(t) {
   var ns = testUtil.makeGrammars('G { Foo<x, y> = x y }');
   t.throws(
-      function() { testUtil.makeGrammar('G2 <: G { Foo<x> += "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      function() { testUtil.makeGrammar('G2 <: G { Bar = Foo<"a"> }', ns); },
+      /Wrong number of arguments for rule Foo \(expected 2, got 1\)/);
   t.throws(
-      function() { testUtil.makeGrammar('G2 <: G { Foo<x, y, z> += "oops!" }', ns); },
-      errors.WrongNumberOfParameters);
+      function() { testUtil.makeGrammar('G2 <: G { Bar = Foo<"a", "b", "c"> }', ns); },
+      /Wrong number of arguments for rule Foo \(expected 2, got 3\)/);
   t.end();
 });
 
@@ -60,7 +59,7 @@ test('require arguments to have arity 1', function(t) {
           '  Start = Foo<digit digit>\n' +
           '}');
       },
-      errors.InvalidParameter);
+      /Invalid parameter to rule Foo/);
   t.end();
 });
 
@@ -72,7 +71,7 @@ test('require the rules referenced in arguments to be declared', function(t) {
           '  start = listOf<asdlfk, ",">\n' +
           '}');
       },
-      errors.UndeclaredRule);
+      /Rule asdlfk is not declared in grammar G/);
   t.end();
 });
 
@@ -82,11 +81,32 @@ test('simple examples', function(t) {
       '  Pair<elem> = "(" elem "," elem ")"\n' +
       '  Start = Pair<digit>\n' +
       '}');
-  var s = g.semantics().addOperation('v', {
-    Pair: function(oparen, x, comma, y, cparen) { return [x.v(), y.v()]; }
+  var s = g.createSemantics().addOperation('v', {
+    Pair: function(oparen, x, comma, y, cparen) { return [x.v(), y.v()]; },
+    digit: function(_) { return this.sourceString; }
   });
   var cst = g.match('(1,2)', 'Start');
   t.deepEqual(s(cst).v(), ['1', '2']);
+  t.end();
+});
+
+test('start matching from parameterized rule', function(t) {
+  var g = testUtil.makeGrammar(
+      'G {\n' +
+      '  App<arg> = arg\n' +
+      '  Simple = App<"x">\n' +
+      '  z = "z"\n' +
+      '}');
+  t.throws(
+    function() { g.match('x'); },
+    /Wrong number of parameters for rule App \(expected 1, got 0\)/,
+    'parameterized default start rule does not work');
+  t.throws(
+    function() { g.match('y', 'App'); },
+    /Wrong number of parameters for rule App \(expected 1, got 0\)/,
+    'parameterized rule does not work as simple rule');
+  t.ok(g.match('y', 'App<"y">').succeeded(), 'matching with primitive parameter');
+  t.ok(g.match('z', 'App<"z">').succeeded(), 'matching with rule parameter');
   t.end();
 });
 
@@ -99,9 +119,10 @@ test('inline rule declarations', function(t) {
       '  Start\n' +
       '    = List<"x", ",">\n' +
       '}');
-  var s = g.semantics().addOperation('v', {
+  var s = g.createSemantics().addOperation('v', {
     List_some: function(x, sep, xs) { return [x.v()].concat(xs.v()); },
-    List_none: function() { return []; }
+    List_none: function() { return []; },
+    _terminal: function() { return this.primitiveValue; }
   });
   var cst = g.match('x, x,x', 'Start');
   t.deepEqual(s(cst).v(), ['x', 'x', 'x']);
@@ -117,9 +138,10 @@ test('left recursion', function(t) {
       '  Start\n' +
       '    = LeftAssoc<digit, "+">\n' +
       '}');
-  var s = g.semantics().addOperation('v', {
+  var s = g.createSemantics().addOperation('v', {
     LeftAssoc_rec: function(x, op, y) { return [op.v(), x.v(), y.v()]; },
-    LeftAssoc_base: function(x) { return x.v(); }
+    LeftAssoc_base: function(x) { return x.v(); },
+    _terminal: function() { return this.primitiveValue; }
   });
   var cst = g.match('1 + 2 + 3', 'Start');
   t.deepEqual(s(cst).v(), ['+', ['+', '1', '2'], '3']);
@@ -132,8 +154,9 @@ test('complex parameters', function(t) {
       '  start = two<~"5" digit>\n' +
       '  two<x> = x x\n' +
       '}');
-  var s = g.semantics().addOperation('v', {
-    two: function(x, y) { return [x.v(), y.v()]; }
+  var s = g.createSemantics().addOperation('v', {
+    two: function(x, y) { return [x.v(), y.v()]; },
+    _terminal: function() { return this.primitiveValue; }
   });
   t.deepEqual(s(g.match('42')).v(), ['4', '2']);
   t.equal(g.match('45').failed(), true);

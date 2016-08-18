@@ -6,6 +6,7 @@
 // Imports
 // --------------------------------------------------------------------
 
+var fs = require('fs');
 var path = require('path');
 
 var ohm = require('../..');
@@ -14,7 +15,7 @@ var ohm = require('../..');
 // Helpers
 // --------------------------------------------------------------------
 
-function isUndefined(x) { return x === void 0; }
+function isUndefined(x) { return x === void 0; }  // eslint-disable-line no-void
 
 // Take an Array of nodes, and whenever an _iter node is encountered, splice in its
 // recursively-flattened children instead.
@@ -32,7 +33,7 @@ function flattenIterNodes(nodes) {
 
 // Comparison function for sorting nodes based on their interval's start index.
 function compareByInterval(node, otherNode) {
-  return node.interval.startIdx - otherNode.interval.startIdx;
+  return node.source.startIdx - otherNode.source.startIdx;
 }
 
 // Semantic actions for the `modifiedSource` attribute (see below).
@@ -44,15 +45,15 @@ var modifiedSourceActions = {
       return undefined;
     }
     var code = '';
-    var interval = flatChildren[0].interval.collapsedLeft();
+    var interval = flatChildren[0].source.collapsedLeft();
     for (var i = 0; i < flatChildren.length; ++i) {
       if (childResults[i] == null) {
         // Grow the interval to include this node.
-        interval = interval.coverageWith(flatChildren[i].interval.collapsedRight());
+        interval = interval.coverageWith(flatChildren[i].source.collapsedRight());
       } else {
-        interval = interval.coverageWith(flatChildren[i].interval.collapsedLeft());
-        code +=  interval.contents + childResults[i];
-        interval = flatChildren[i].interval.collapsedRight();
+        interval = interval.coverageWith(flatChildren[i].source.collapsedLeft());
+        code += interval.contents + childResults[i];
+        interval = flatChildren[i].source.collapsedRight();
       }
     }
     code += interval.contents;
@@ -67,8 +68,9 @@ var modifiedSourceActions = {
 };
 
 // Instantiate the ES5 grammar.
-var g = ohm.grammarsFromFile(path.join(__dirname, 'es5.ohm')).ES5;
-var semantics = g.semantics();
+var contents = fs.readFileSync(path.join(__dirname, 'es5.ohm'));
+var g = ohm.grammars(contents).ES5;
+var semantics = g.createSemantics();
 
 // An attribute whose value is either a string representing the modified source code for the
 // node, or undefined (which means that the original source code should be used).
@@ -78,7 +80,7 @@ semantics.addAttribute('modifiedSource', modifiedSourceActions);
 // containing the ES5 source code for the node.
 semantics.addAttribute('asES5', {
   _nonterminal: function(children) {
-    return isUndefined(this.modifiedSource) ? this.interval.contents : this.modifiedSource;
+    return isUndefined(this.modifiedSource) ? this.sourceString : this.modifiedSource;
   }
 });
 

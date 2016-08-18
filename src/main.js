@@ -11,6 +11,7 @@ var Grammar = require('./Grammar');
 var Namespace = require('./Namespace');
 var common = require('./common');
 var errors = require('./errors');
+var pexprs = require('./pexprs');
 var util = require('./util');
 
 var isBuffer = require('is-buffer');
@@ -35,7 +36,7 @@ function isElement(obj) {
 }
 
 function isUndefined(obj) {
-  return obj === void 0;
+  return obj === void 0;  // eslint-disable-line no-void
 }
 
 var MAX_ARRAY_INDEX = Math.pow(2, 53) - 1;
@@ -66,7 +67,7 @@ function load(url) {
 // The grammar will be assigned into `namespace` under the name of the grammar
 // as specified in the source.
 function buildGrammar(match, namespace, optOhmGrammarForTesting) {
-  var builder;
+  var builder = new Builder();
   var decl;
   var currentRuleName;
   var currentRuleFormals;
@@ -74,17 +75,16 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
   var metaGrammar = optOhmGrammarForTesting || ohmGrammar;
 
   // A visitor that produces a Grammar instance from the CST.
-  var helpers = metaGrammar.semantics().addOperation('visit', {
+  var helpers = metaGrammar.createSemantics().addOperation('visit', {
     Grammar: function(n, s, open, rs, close) {
-      builder = new Builder();
       var grammarName = n.visit();
       decl = builder.newGrammar(grammarName, namespace);
       s.visit();
       rs.visit();
       var g = decl.build();
-      g.definitionInterval = this.interval.trimmed();
+      g.source = this.source.trimmed();
       if (grammarName in namespace) {
-        throw new errors.DuplicateGrammarDeclaration(g, namespace);
+        throw errors.duplicateGrammarDeclaration(g, namespace);
       }
       namespace[grammarName] = g;
       return g;
@@ -96,7 +96,7 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
         decl.withSuperGrammar(null);
       } else {
         if (!namespace || !(superGrammarName in namespace)) {
-          throw new errors.UndeclaredGrammar(superGrammarName, namespace, n.interval);
+          throw errors.undeclaredGrammar(superGrammarName, namespace, n.source);
         }
         decl.withSuperGrammar(namespace[superGrammarName]);
       }
@@ -111,17 +111,17 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
         decl.withDefaultStartRule(currentRuleName);
       }
       var body = b.visit();
-      body.definitionInterval = this.interval.trimmed();
       var description = d.visit()[0];
-      return decl.define(currentRuleName, currentRuleFormals, body, description);
+      var source = this.source.trimmed();
+      return decl.define(currentRuleName, currentRuleFormals, body, description, source);
     },
     Rule_override: function(n, fs, _, b) {
       currentRuleName = n.visit();
       currentRuleFormals = fs.visit()[0] || [];
       overriding = true;
       var body = b.visit();
-      body.definitionInterval = this.interval.trimmed();
-      var ans = decl.override(currentRuleName, currentRuleFormals, body);
+      var source = this.source.trimmed();
+      var ans = decl.override(currentRuleName, currentRuleFormals, body, null, source);
       overriding = false;
       return ans;
     },
@@ -129,9 +129,13 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
       currentRuleName = n.visit();
       currentRuleFormals = fs.visit()[0] || [];
       var body = b.visit();
-      var ans = decl.extend(currentRuleName, currentRuleFormals, body);
-      decl.ruleDict[currentRuleName].definitionInterval = this.interval.trimmed();
+      var source = this.source.trimmed();
+      var ans = decl.extend(currentRuleName, currentRuleFormals, body, null, source);
       return ans;
+    },
+    RuleBody: function(_, terms) {
+      var args = terms.visit();
+      return builder.alt.apply(builder, args).withSource(this.source);
     },
 
     Formals: function(opointy, fs, cpointy) {
@@ -142,88 +146,69 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
       return ps.visit();
     },
 
-    Alt: function(term, _, terms) {
-      var args = [term.visit()].concat(terms.visit());
-      return builder.alt.apply(builder, args).withInterval(this.interval);
+    Alt: function(seqs) {
+      var args = seqs.visit();
+      return builder.alt.apply(builder, args).withSource(this.source);
     },
 
-    Term_inline: function(b, n) {
+    TopLevelTerm_inline: function(b, n) {
       var inlineRuleName = currentRuleName + '_' + n.visit();
       var body = b.visit();
-      body.definitionInterval = this.interval.trimmed();
-      var isNewRuleDeclaration = !(decl.superGrammar && decl.superGrammar.ruleDict[inlineRuleName]);
+      var source = this.source.trimmed();
+      var isNewRuleDeclaration =
+          !(decl.superGrammar && decl.superGrammar.rules[inlineRuleName]);
       if (overriding && !isNewRuleDeclaration) {
-        decl.override(inlineRuleName, currentRuleFormals, body);
+        decl.override(inlineRuleName, currentRuleFormals, body, null, source);
       } else {
-        decl.define(inlineRuleName, currentRuleFormals, body);
+        decl.define(inlineRuleName, currentRuleFormals, body, null, source);
       }
       var params = currentRuleFormals.map(function(formal) { return builder.app(formal); });
-      return builder.app(inlineRuleName, params).withInterval(body.interval);
+      return builder.app(inlineRuleName, params).withSource(body.source);
     },
 
     Seq: function(expr) {
-      return builder.seq.apply(builder, expr.visit()).withInterval(this.interval);
+      return builder.seq.apply(builder, expr.visit()).withSource(this.source);
     },
 
     Iter_star: function(x, _) {
-      return builder.star(x.visit()).withInterval(this.interval);
+      return builder.star(x.visit()).withSource(this.source);
     },
     Iter_plus: function(x, _) {
-      return builder.plus(x.visit()).withInterval(this.interval);
+      return builder.plus(x.visit()).withSource(this.source);
     },
     Iter_opt: function(x, _) {
-      return builder.opt(x.visit()).withInterval(this.interval);
+      return builder.opt(x.visit()).withSource(this.source);
     },
 
     Pred_not: function(_, x) {
-      return builder.not(x.visit()).withInterval(this.interval);
+      return builder.not(x.visit()).withSource(this.source);
     },
     Pred_lookahead: function(_, x) {
-      return builder.la(x.visit()).withInterval(this.interval);
+      return builder.lookahead(x.visit()).withSource(this.source);
     },
 
     Lex_lex: function(_, x) {
-      return builder.lex(x.visit()).withInterval(this.interval);
+      return builder.lex(x.visit()).withSource(this.source);
     },
 
     Base_application: function(rule, ps) {
-      return builder.app(rule.visit(), ps.visit()[0] || []).withInterval(this.interval);
+      return builder.app(rule.visit(), ps.visit()[0] || []).withSource(this.source);
     },
     Base_range: function(from, _, to) {
-      return builder.range(from.visit(), to.visit()).withInterval(this.interval);
+      return builder.range(from.visit(), to.visit()).withSource(this.source);
     },
-    Base_prim: function(expr) {
-      return builder.prim(expr.visit()).withInterval(this.interval);
+    Base_terminal: function(expr) {
+      return builder.terminal(expr.visit()).withSource(this.source);
     },
     Base_paren: function(open, x, close) {
       return x.visit();
-    },
-    Base_arr: function(open, x, close) {
-      return builder.arr(x.visit()).withInterval(this.interval);
-    },
-    Base_str: function(open, x, close) {
-      return builder.str(x.visit());
-    },
-    Base_obj: function(open, lenient, close) {
-      return builder.obj([], lenient.visit()[0]);
-    },
-
-    Base_objWithProps: function(open, ps, _, lenient, close) {
-      return builder.obj(ps.visit(), lenient.visit()[0]).withInterval(this.interval);
-    },
-
-    Props: function(p, _, ps) {
-      return [p.visit()].concat(ps.visit());
-    },
-    Prop: function(n, _, p) {
-      return {name: n.visit(), pattern: p.visit()};
     },
 
     ruleDescr: function(open, t, close) {
       return t.visit();
     },
     ruleDescrText: function(_) {
-      return this.interval.contents.trim();
+      return this.sourceString.trim();
     },
 
     caseName: function(_, space1, n, space2, end) {
@@ -231,46 +216,32 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
     },
 
     name: function(first, rest) {
-      return this.interval.contents;
+      return this.sourceString;
     },
     nameFirst: function(expr) {},
     nameRest: function(expr) {},
 
-    keyword_null: function(_) {
-      return null;
-    },
-    keyword_true: function(_) {
-      return true;
-    },
-    keyword_false: function(_) {
-      return false;
-    },
-
-    string: function(open, cs, close) {
+    terminal: function(open, cs, close) {
       return cs.visit().map(function(c) { return common.unescapeChar(c); }).join('');
     },
 
-    strChar: function(_) {
-      return this.interval.contents;
+    terminalChar: function(_) {
+      return this.sourceString;
     },
 
     escapeChar: function(_) {
-      return this.interval.contents;
+      return this.sourceString;
     },
 
-    number: function(_, digits) {
-      return parseInt(this.interval.contents);
-    },
-
-    space: function(expr) {},
-    space_multiLine: function(start, _, end) {},
-    space_singleLine: function(start, _, end) {},
-
-    ListOf_some: function(x, _, xs) {
+    NonemptyListOf: function(x, _, xs) {
       return [x.visit()].concat(xs.visit());
     },
-    ListOf_none: function() {
+    EmptyListOf: function() {
       return [];
+    },
+
+    _terminal: function() {
+      return this.primitiveValue;
     }
   });
   return helpers(match).visit();
@@ -279,7 +250,7 @@ function buildGrammar(match, namespace, optOhmGrammarForTesting) {
 function compileAndLoad(source, namespace) {
   var m = ohmGrammar.match(source, 'Grammars');
   if (m.failed()) {
-    throw new errors.GrammarSyntaxError(m);
+    throw errors.grammarSyntaxError(m);
   }
   return buildGrammar(m, namespace);
 }
@@ -304,7 +275,7 @@ function grammar(source, optNamespace) {
     throw new Error('Missing grammar definition');
   } else if (grammarNames.length > 1) {
     var secondGrammar = ns[grammarNames[1]];
-    var interval = secondGrammar.definitionInterval;
+    var interval = secondGrammar.source;
     throw new Error(
         util.getLineAndColumnMessage(interval.inputStream.source, interval.startIdx) +
         'Found more than one grammar definition -- use ohm.grammars() instead.');
@@ -361,8 +332,16 @@ function grammarsFromScriptElements(optNodeOrNodeList) {
   return ns;
 }
 
-function makeRecipe(recipeFn) {
-  return recipeFn.call(new Builder());
+function makeRecipe(recipe) {
+  if (typeof recipe === 'function') {
+    return recipe.call(new Builder());
+  } else {
+    if (typeof recipe === 'string') {
+      // stringified JSON recipe
+      recipe = JSON.parse(recipe);
+    }
+    return (new Builder()).fromRecipe(recipe);
+  }
 }
 
 // --------------------------------------------------------------------
@@ -370,32 +349,31 @@ function makeRecipe(recipeFn) {
 // --------------------------------------------------------------------
 
 // Stuff that users should know about
-
 module.exports = {
   createNamespace: Namespace.createNamespace,
-  error: errors,
   grammar: grammar,
   grammars: grammars,
   grammarFromScriptElement: grammarFromScriptElement,
   grammarsFromScriptElements: grammarsFromScriptElements,
   makeRecipe: makeRecipe,
-  util: util
+  ohmGrammar: null,  // Initialized below, after Grammar.BuiltInRules.
+  pexprs: pexprs,
+  util: util,
+  extras: require('../extras')
 };
 
-// Stuff that's only available when running under Node.js.
-var fs = require('fs');
-if (typeof fs.readFileSync === 'function') {
-  module.exports.grammarFromFile = function(filename, optNamespace) {
-    return grammar(fs.readFileSync(filename).toString(), optNamespace);
-  };
-  module.exports.grammarsFromFile = function(filename, optNamespace) {
-    return grammars(fs.readFileSync(filename).toString(), optNamespace);
-  };
-}
-
-// Stuff that's only here for bootstrapping, testing, etc.
-Grammar.BuiltInRules = require('../dist/built-in-rules');
-ohmGrammar = require('../dist/ohm-grammar');
+// Stuff for testing, etc.
 module.exports._buildGrammar = buildGrammar;
 module.exports._setDocumentInterfaceForTesting = function(doc) { documentInterface = doc; };
-module.exports.ohmGrammar = ohmGrammar;
+
+// Late initialization for stuff that is bootstrapped.
+
+Grammar.BuiltInRules = require('../dist/built-in-rules');
+
+var Semantics = require('./Semantics');
+var operationsAndAttributesGrammar = require('../dist/operations-and-attributes');
+Semantics.initBuiltInSemantics(Grammar.BuiltInRules);
+Semantics.initPrototypeParser(operationsAndAttributesGrammar);  // requires BuiltInSemantics
+
+module.exports.ohmGrammar = ohmGrammar = require('../dist/ohm-grammar');
+Grammar.initApplicationParser(ohmGrammar, buildGrammar);

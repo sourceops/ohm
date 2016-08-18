@@ -20,17 +20,6 @@ var SYMBOL_FOR_HORIZONTAL_TABULATION = '\u2409';
 var SYMBOL_FOR_LINE_FEED = '\u240A';
 var SYMBOL_FOR_CARRIAGE_RETURN = '\u240D';
 
-function linkLeftRecursiveChildren(children) {
-  for (var i = 0; i < children.length; ++i) {
-    var child = children[i];
-    var nextChild = children[i + 1];
-
-    if (nextChild && child.expr === nextChild.expr) {
-      child.replacedBy = nextChild;
-    }
-  }
-}
-
 function spaces(n) {
   return common.repeat(' ', n).join('');
 }
@@ -61,27 +50,53 @@ function asEscapedString(obj) {
 
 // ----------------- Trace -----------------
 
-function Trace(inputStream, pos, expr, ans, optChildren) {
-  this.children = optChildren || [];
-  this.expr = expr;
-  if (ans) {
-    this.interval = new Interval(inputStream, pos, inputStream.pos);
-  }
-  this.isLeftRecursive = false;
-  this.pos = pos;
+function Trace(inputStream, pos, expr, succeeded, bindings, optChildren) {
   this.inputStream = inputStream;
-  this.succeeded = !!ans;
+  this.pos = pos;
+  this.source = new Interval(inputStream, pos, inputStream.pos);
+  this.expr = expr;
+  this.succeeded = succeeded;
+  this.bindings = bindings;
+  this.children = optChildren || [];
+
+  this.isHeadOfLeftRecursion = false;  // Is this the outermost LR application?
+  this.isImplicitSpaces = false;
+  this.isMemoized = false;
+  this.isRootNode = false;
+  this.terminatesLR = false;
+  this.terminatingLREntry = null;
 }
+
+// A value that can be returned from visitor functions to indicate that a
+// node should not be recursed into.
+Trace.prototype.SKIP = {};
 
 Object.defineProperty(Trace.prototype, 'displayString', {
   get: function() { return this.expr.toDisplayString(); }
 });
 
-Trace.prototype.setLeftRecursive = function(leftRecursive) {
-  this.isLeftRecursive = leftRecursive;
-  if (leftRecursive) {
-    linkLeftRecursiveChildren(this.children);
-  }
+Trace.prototype.clone = function() {
+  return this.cloneWithExpr(this.expr);
+};
+
+Trace.prototype.cloneWithExpr = function(expr) {
+  var ans = new Trace(
+      this.inputStream, this.pos, expr, this.succeeded, this.bindings, this.children);
+
+  ans.isHeadOfLeftRecursion = this.isHeadOfLeftRecursion;
+  ans.isImplicitSpaces = this.isImplicitSpaces;
+  ans.isMemoized = this.isMemoized;
+  ans.isRootNode = this.isRootNode;
+  ans.terminatesLR = this.terminatesLR;
+  ans.terminatingLREntry = this.terminatingLREntry;
+  return ans;
+};
+
+// Record the trace information for the terminating condition of the LR loop.
+Trace.prototype.recordLRTermination = function(ruleBodyTrace, value) {
+  this.terminatingLREntry =
+      new Trace(this.inputStream, this.pos, this.expr, false, [value], [ruleBodyTrace]);
+  this.terminatingLREntry.terminatesLR = true;
 };
 
 // Recursively traverse this trace node and all its descendents, calling a visitor function
@@ -98,19 +113,29 @@ Trace.prototype.walk = function(visitorObjOrFn, optThisArg) {
   if (typeof visitor === 'function') {
     visitor = {enter: visitor};
   }
-  return (function _walk(node, parent, depth) {
+
+  function _walk(node, parent, depth) {
+    var recurse = true;
     if (visitor.enter) {
-      visitor.enter.call(optThisArg, node, parent, depth);
-    }
-    node.children.forEach(function(c) {
-      if (c && ('walk' in c)) {
-        _walk(c, node, depth + 1);
+      if (visitor.enter.call(optThisArg, node, parent, depth) === Trace.prototype.SKIP) {
+        recurse = false;
       }
-    });
-    if (visitor.exit) {
-      visitor.exit.call(optThisArg, node, parent, depth);
     }
-  })(this, null, 0);
+    if (recurse) {
+      node.children.forEach(function(child) {
+        _walk(child, node, depth + 1);
+      });
+      if (visitor.exit) {
+        visitor.exit.call(optThisArg, node, parent, depth);
+      }
+    }
+  }
+  if (this.isRootNode) {
+    // Don't visit the root node itself, only its children.
+    this.children.forEach(function(c) { _walk(c, null, 0); });
+  } else {
+    _walk(this, null, 0);
+  }
 };
 
 // Return a string representation of the trace.
@@ -121,22 +146,26 @@ Trace.prototype.walk = function(visitorObjOrFn, optThisArg) {
 Trace.prototype.toString = function() {
   var sb = new common.StringBuffer();
   this.walk(function(node, parent, depth) {
+    if (!node) {
+      return this.SKIP;
+    }
     var ctorName = node.expr.constructor.name;
+    // Don't print anything for Alt nodes.
     if (ctorName === 'Alt') {
-      return;  // Don't print anything for Alt nodes.
+      return;  // eslint-disable-line consistent-return
     }
     sb.append(getInputExcerpt(node.inputStream, node.pos, 10) + spaces(depth * 2 + 1));
     sb.append((node.succeeded ? CHECK_MARK : BALLOT_X) + ' ' + node.displayString);
-    if (node.isLeftRecursive) {
+    if (node.isHeadOfLeftRecursion) {
       sb.append(' (LR)');
     }
     if (node.succeeded) {
-      var contents = asEscapedString(node.interval.contents);
+      var contents = asEscapedString(node.source.contents);
       sb.append(' ' + RIGHTWARDS_DOUBLE_ARROW + '  ');
       sb.append(typeof contents === 'string' ? '"' + contents + '"' : contents);
     }
     sb.append('\n');
-  });
+  }.bind(this));
   return sb.contents();
 };
 

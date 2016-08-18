@@ -8,144 +8,108 @@ var common = require('./common');
 var pexprs = require('./pexprs');
 
 // --------------------------------------------------------------------
+// Private stuff
+// --------------------------------------------------------------------
+
+function getMetaInfo(expr, grammarInterval) {
+  var metaInfo = {};
+  if (expr.source && grammarInterval) {
+    var adjusted = expr.source.relativeTo(grammarInterval);
+    metaInfo.sourceInterval = [adjusted.startIdx, adjusted.endIdx];
+  }
+  return metaInfo;
+}
+
+// --------------------------------------------------------------------
 // Operations
 // --------------------------------------------------------------------
 
-pexprs.PExpr.prototype.outputRecipe = common.abstract;
+pexprs.PExpr.prototype.outputRecipe = common.abstract('outputRecipe');
 
-pexprs.anything.outputRecipe = function(sb, formals) {
-  sb.append('this.anything()');
+pexprs.any.outputRecipe = function(formals, grammarInterval) {
+  return ['any', getMetaInfo(this, grammarInterval)];
 };
 
-pexprs.end.outputRecipe = function(sb, formals) {
-  sb.append('this.end()');
+pexprs.end.outputRecipe = function(formals, grammarInterval) {
+  return ['end', getMetaInfo(this, grammarInterval)];
 };
 
-pexprs.Prim.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.prim(');
-  sb.append(typeof this.obj === 'string' ? JSON.stringify(this.obj) : '' + this.obj);
-  sb.append(')');
+pexprs.Terminal.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'terminal',
+    getMetaInfo(this, grammarInterval),
+    this.obj
+  ];
 };
 
-pexprs.Range.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.range(');
-  sb.append(JSON.stringify(this.from));
-  sb.append(', ');
-  sb.append(JSON.stringify(this.to));
-  sb.append(')');
+pexprs.Range.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'range',
+    getMetaInfo(this, grammarInterval),
+    this.from,
+    this.to
+  ];
 };
 
-pexprs.Param.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.param(' + this.index + ')');
+pexprs.Param.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'param',
+    getMetaInfo(this, grammarInterval),
+    this.index
+  ];
 };
 
-pexprs.Alt.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.alt(');
-  for (var idx = 0; idx < this.terms.length; idx++) {
-    if (idx > 0) {
-      sb.append(', ');
-    }
-    this.terms[idx].outputRecipe(sb, formals);
-  }
-  sb.append(')');
+pexprs.Alt.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'alt',
+    getMetaInfo(this, grammarInterval)
+  ].concat(this.terms.map(function(term) {
+    return term.outputRecipe(formals, grammarInterval);
+  }));
 };
 
-pexprs.Seq.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.seq(');
-  for (var idx = 0; idx < this.factors.length; idx++) {
-    if (idx > 0) {
-      sb.append(', ');
-    }
-    this.factors[idx].outputRecipe(sb, formals);
-  }
-  sb.append(')');
+pexprs.Extend.prototype.outputRecipe = function(formals, grammarInterval) {
+  var extension = this.terms[0]; // [extension, orginal]
+  return extension.outputRecipe(formals, grammarInterval);
 };
 
-pexprs.Star.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.star(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
+pexprs.Seq.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'seq',
+    getMetaInfo(this, grammarInterval)
+  ].concat(this.factors.map(function(factor) {
+    return factor.outputRecipe(formals, grammarInterval);
+  }));
 };
 
-pexprs.Plus.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.plus(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
+pexprs.Star.prototype.outputRecipe =
+pexprs.Plus.prototype.outputRecipe =
+pexprs.Opt.prototype.outputRecipe =
+pexprs.Not.prototype.outputRecipe =
+pexprs.Lookahead.prototype.outputRecipe =
+pexprs.Lex.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    this.constructor.name.toLowerCase(),
+    getMetaInfo(this, grammarInterval),
+    this.expr.outputRecipe(formals, grammarInterval)
+  ];
 };
 
-pexprs.Opt.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.opt(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
+pexprs.Apply.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'app',
+    getMetaInfo(this, grammarInterval),
+    this.ruleName,
+    this.args.map(function(arg) {
+      return arg.outputRecipe(formals, grammarInterval);
+    })
+  ];
 };
 
-pexprs.Not.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.not(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
-};
-
-pexprs.Lookahead.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.la(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
-};
-
-pexprs.Lex.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.lex(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
-};
-
-pexprs.Arr.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.arr(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
-};
-
-pexprs.Str.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.str(');
-  this.expr.outputRecipe(sb, formals);
-  sb.append(')');
-};
-
-pexprs.Obj.prototype.outputRecipe = function(sb, formals) {
-  function outputPropertyRecipe(prop) {
-    sb.append('{name: ');
-    sb.append(JSON.stringify(prop.name));
-    sb.append(', pattern: ');
-    prop.pattern.outputRecipe(sb, formals);
-    sb.append('}');
-  }
-
-  sb.append('this.obj([');
-  for (var idx = 0; idx < this.properties.length; idx++) {
-    if (idx > 0) {
-      sb.append(', ');
-    }
-    outputPropertyRecipe(this.properties[idx]);
-  }
-  sb.append('], ');
-  sb.append(!!this.isLenient);
-  sb.append(')');
-};
-
-pexprs.Apply.prototype.outputRecipe = function(sb, formals) {
-  sb.append('this.app(');
-  sb.append(JSON.stringify(this.ruleName));
-  if (this.ruleName.indexOf('_') >= 0 && formals.length > 0) {
-    var apps = formals.
-        map(function(formal) { return 'this.app(' + JSON.stringify(formal) + ')'; });
-    sb.append(', [' + apps.join(', ') + ']');
-  } else if (this.params.length > 0) {
-    sb.append(', [');
-    this.params.forEach(function(param, idx) {
-      if (idx > 0) {
-        sb.append(', ');
-      }
-      param.outputRecipe(sb, formals);
-    });
-    sb.append(']');
-  }
-  sb.append(')');
+pexprs.UnicodeChar.prototype.outputRecipe = function(formals, grammarInterval) {
+  return [
+    'unicodeChar',
+    getMetaInfo(this, grammarInterval),
+    this.category
+  ];
 };

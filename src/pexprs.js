@@ -19,42 +19,28 @@ function PExpr() {
   throw new Error("PExpr cannot be instantiated -- it's abstract");
 }
 
-PExpr.prototype.withDescription = function(description) {
-  this.description = description;
-  return this;
-};
-
-PExpr.prototype.withInterval = function(interval) {
+// Set the `source` property to the interval containing the source for this expression.
+PExpr.prototype.withSource = function(interval) {
   if (interval) {
-    this.interval = interval.trimmed();
+    this.source = interval.trimmed();
   }
   return this;
 };
 
-PExpr.prototype.withFormals = function(formals) {
-  this.formals = formals;
-  return this;
-};
+// Any
 
-// Anything
-
-var anything = Object.create(PExpr.prototype);
+var any = Object.create(PExpr.prototype);
 
 // End
 
 var end = Object.create(PExpr.prototype);
 
-// Primitives
+// Terminals
 
-function Prim(obj) {
+function Terminal(obj) {
   this.obj = obj;
 }
-inherits(Prim, PExpr);
-
-function StringPrim(obj) {
-  this.obj = obj;
-}
-inherits(StringPrim, Prim);
+inherits(Terminal, PExpr);
 
 // Ranges
 
@@ -84,7 +70,7 @@ function Extend(superGrammar, name, body) {
   this.superGrammar = superGrammar;
   this.name = name;
   this.body = body;
-  var origBody = superGrammar.ruleDict[name];
+  var origBody = superGrammar.rules[name].body;
   this.terms = [body, origBody];
 }
 inherits(Extend, Alt);
@@ -169,7 +155,7 @@ function Obj(properties, isLenient) {
   var names = properties.map(function(property) { return property.name; });
   var duplicates = common.getDuplicates(names);
   if (duplicates.length > 0) {
-    throw new errors.DuplicatePropertyNames(duplicates);
+    throw errors.duplicatePropertyNames(duplicates);
   } else {
     this.properties = properties;
     this.isLenient = isLenient;
@@ -179,9 +165,9 @@ inherits(Obj, PExpr);
 
 // Rule application
 
-function Apply(ruleName, optParams) {
+function Apply(ruleName, optArgs) {
   this.ruleName = ruleName;
-  this.params = optParams || [];
+  this.args = optArgs || [];
 }
 inherits(Apply, PExpr);
 
@@ -209,19 +195,10 @@ inherits(UnicodeChar, PExpr);
 // Exports
 // --------------------------------------------------------------------
 
-exports.makePrim = function(obj) {
-  if (typeof obj === 'string' && obj.length !== 1) {
-    return new StringPrim(obj);
-  } else {
-    return new Prim(obj);
-  }
-};
-
 exports.PExpr = PExpr;
-exports.anything = anything;
+exports.any = any;
 exports.end = end;
-exports.Prim = Prim;
-exports.StringPrim = StringPrim;
+exports.Terminal = Terminal;
 exports.Range = Range;
 exports.Param = Param;
 exports.Alt = Alt;
@@ -244,16 +221,19 @@ exports.UnicodeChar = UnicodeChar;
 // Extensions
 // --------------------------------------------------------------------
 
+require('./pexprs-allowsSkippingPrecedingSpace');
 require('./pexprs-assertAllApplicationsAreValid');
 require('./pexprs-assertChoicesHaveUniformArity');
 require('./pexprs-assertIteratedExprsAreNotNullable');
 require('./pexprs-check');
 require('./pexprs-eval');
 require('./pexprs-getArity');
+require('./pexprs-generateExample');
 require('./pexprs-outputRecipe');
 require('./pexprs-introduceParams');
 require('./pexprs-isNullable');
 require('./pexprs-substituteParams');
 require('./pexprs-toDisplayString');
-require('./pexprs-toExpected');
+require('./pexprs-toArgumentNameList');
+require('./pexprs-toFailure');
 require('./pexprs-toString');

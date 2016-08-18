@@ -1,6 +1,6 @@
 {
   "name": "ohm-js",
-  "version": "0.8.2",
+  "version": "0.12.0",
   "description": "An object-oriented language for parsing and pattern matching",
   "repository": "https://github.com/cdglabs/ohm",
   "keywords": [
@@ -23,50 +23,63 @@
     "options": "src/main.js --debug --standalone ohm -o dist/ohm.js"
   },
   "scripts": {
-    "prebootstrap": "npm test --silent && cp dist/ohm-grammar.js dist/ohm-grammar.js.old && cp dist/built-in-rules.js dist/built-in-rules.js.old",
-    "bootstrap": "npm run unsafe-bootstrap && npm test --silent || (echo 'Bootstrap failed.'; mv -v dist/ohm-grammar.js.old dist/ohm-grammar.js; mv -v dist/built-in-rules.js.old dist/built-in-rules.js)",
+    "prebootstrap": "bash bin/prebootstrap",
+    "bootstrap": "bash bin/bootstrap --test || (echo 'Bootstrap failed.' && mv -v dist/ohm-grammar.js.old dist/ohm-grammar.js && mv -v dist/built-in-rules.js.old dist/built-in-rules.js && mv -v dist/operations-and-attributes.js.old dist/operations-and-attributes.js)",
     "build": "npm run build-debug && uglifyjs dist/ohm.js > dist/ohm.min.js",
-    "prebuild-debug": "bin/update-env.sh",
-    "build-debug": "browserify $npm_package_browserify_options",
+    "prebuild-debug": "bash bin/update-env.sh",
+    "build-debug": "bash bin/build-debug.sh",
     "clean": "rm -f dist/ohm.js dist/ohm.min.js",
     "deploy-gh-pages": "bin/deploy-gh-pages.sh",
-    "lint": "eslint --rulesdir eslint_rules . && jscs --preset=google .",
-    "pretest": "bin/update-env.sh && npm run build",
-    "test": "tape test/*.js | tap-spec",
-    "test-watch": "watchy -w README.md,example,doc,src,test -- npm test",
-    "postinstall": "bin/dev-setup.sh; touch .install-timestamp",
+    "lint": "eslint --rulesdir eslint_rules .",
+    "pretest": "bash bin/update-env.sh",
+    "test": "tape test/*.js test/**/*.js | tap-spec",
+    "test-watch": "bash bin/test-watch",
+    "postinstall": "bash bin/postinstall",
     "prepublish": "npm run lint && npm run build && npm run bootstrap",
-    "unsafe-bootstrap": "src/ohm-cmd.js src/ohm-grammar.ohm > dist/ohm-grammar.js.new && mv -f dist/ohm-grammar.js.new dist/ohm-grammar.js && src/ohm-cmd.js src/built-in-rules.ohm > dist/built-in-rules.js.new && mv -f dist/built-in-rules.js.new dist/built-in-rules.js",
+    "unsafe-bootstrap": "bash bin/bootstrap",
     "visualizer": "npm run watch & bin/ohm-visualizer",
-    "watch": "watchify $npm_package_browserify_options -v"
+    "watch": "bash bin/watch.sh"
   },
   "license": "MIT",
   "author": "Alex Warth <alexwarth@gmail.com> (http://tinlizzie.org/~awarth)",
   "contributors": [
     "Patrick Dubroy <pdubroy@gmail.com>",
+    "Meixian Li <lmeixian@gmail.com>",
+    "Marko Röder <m.roeder@photon-software.de>",
     "Tony Garnock-Jones <tonygarnockjones@gmail.com>",
-    "Yoshiki Ohshima <Yoshiki.Ohshima@acm.org>"
+    "Lionel Landwerlin <llandwerlin@gmail.com>",
+    "Jason Merrill <jwmerrill@gmail.com>",
+    "Saketh Kasibatla <sake.kasi@gmail.com>",
+    "Yoshiki Ohshima <Yoshiki.Ohshima@acm.org>",
+    "codeZeilen <codeZeilen@users.noreply.github.com>",
+    "Justin Chase <justin.m.chase@gmail.com>",
+    "Daniel Tomlinson <DanielTomlinson@me.com>",
+    "Stephan Seidt <stephan.seidt@gmail.com>"
   ],
   "dependencies": {
-    "es6-symbol": "^2.0.1",
+    "es6-symbol": "^3.1.0",
     "inherits": "^2.0.1",
-    "is-buffer": "^1.0.2",
-    "util-extend": "^1.0.1"
+    "is-buffer": "^1.1.4",
+    "util-extend": "^1.0.3"
   },
   "devDependencies": {
-    "browser-sync": "^2.4.0",
-    "browserify": "^3.30.4",
-    "eslint": "^0.17.1",
+    "browser-sync": "^2.8.0",
+    "browserify": "^13.1.0",
+    "checked-emitter": "^1.0.1",
+    "eslint": "^3.2.2",
+    "eslint-config-google": "^0.6.0",
     "eslint-plugin-no-extension-in-require": "^0.2.0",
-    "jscs": "^1.12.0",
-    "jsdom": "^3.1.2",
+    "jsdom": "^9.4.1",
+    "json": "^9.0.3",
     "markscript": "0.4.2",
-    "tap-spec": "^2.2.2",
-    "tape": "^3.5.0",
+    "node-static": "^0.7.7",
+    "nodemon": "^1.9.2",
+    "tap-spec": "^4.1.1",
+    "tape": "^4.6.0",
     "tape-catch": "^1.0.4",
     "uglify-js": "^2.4.12",
-    "watchify": "^0.6.1",
-    "watchy": "^0.6.1"
+    "walk-sync": "^0.3.0",
+    "watchify": "^3.3.0"
   },
   "engines": {
     "node": ">=0.12.1"

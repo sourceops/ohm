@@ -12,11 +12,13 @@ var pexprs = require('./pexprs');
 // Operations
 // --------------------------------------------------------------------
 
-pexprs.PExpr.prototype.assertChoicesHaveUniformArity = common.abstract;
+pexprs.PExpr.prototype.assertChoicesHaveUniformArity = common.abstract(
+  'assertChoicesHaveUniformArity'
+);
 
-pexprs.anything.assertChoicesHaveUniformArity =
+pexprs.any.assertChoicesHaveUniformArity =
 pexprs.end.assertChoicesHaveUniformArity =
-pexprs.Prim.prototype.assertChoicesHaveUniformArity =
+pexprs.Terminal.prototype.assertChoicesHaveUniformArity =
 pexprs.Range.prototype.assertChoicesHaveUniformArity =
 pexprs.Param.prototype.assertChoicesHaveUniformArity =
 pexprs.Lex.prototype.assertChoicesHaveUniformArity =
@@ -34,7 +36,7 @@ pexprs.Alt.prototype.assertChoicesHaveUniformArity = function(ruleName) {
     term.assertChoicesHaveUniformArity();
     var otherArity = term.getArity();
     if (arity !== otherArity) {
-      throw new errors.InconsistentArity(ruleName, arity, otherArity, this);
+      throw errors.inconsistentArity(ruleName, arity, otherArity, term);
     }
   }
 };
@@ -45,7 +47,7 @@ pexprs.Extend.prototype.assertChoicesHaveUniformArity = function(ruleName) {
   var actualArity = this.terms[0].getArity();
   var expectedArity = this.terms[1].getArity();
   if (actualArity !== expectedArity) {
-    throw new errors.InconsistentArity(ruleName, expectedArity, actualArity, this);
+    throw errors.inconsistentArity(ruleName, expectedArity, actualArity, this.terms[0]);
   }
 };
 
@@ -63,16 +65,8 @@ pexprs.Not.prototype.assertChoicesHaveUniformArity = function(ruleName) {
   // no-op (not required b/c the nested expr doesn't show up in the CST)
 };
 
-pexprs.Lookahead.prototype.assertChoicesHaveUniformArity =
-pexprs.Arr.prototype.assertChoicesHaveUniformArity =
-pexprs.Str.prototype.assertChoicesHaveUniformArity = function(ruleName) {
+pexprs.Lookahead.prototype.assertChoicesHaveUniformArity = function(ruleName) {
   this.expr.assertChoicesHaveUniformArity(ruleName);
-};
-
-pexprs.Obj.prototype.assertChoicesHaveUniformArity = function(ruleName) {
-  for (var idx = 0; idx < this.properties.length; idx++) {
-    this.properties[idx].pattern.assertChoicesHaveUniformArity(ruleName);
-  }
 };
 
 pexprs.Apply.prototype.assertChoicesHaveUniformArity = function(ruleName) {

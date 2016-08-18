@@ -5,6 +5,8 @@
 
 set -e
 
+ROOT=$(npm prefix)
+
 function cleanup {
   echo
   git tag -d $(git log -1 --pretty=%B)  # Delete the last tag
@@ -18,6 +20,9 @@ if [ "$#" -ne "1" ]; then
   exit 1
 fi
 
+# Update the list of contributors.
+json -I -f ${ROOT}/package.json -e "this.contributors=[$(${ROOT}/bin/get-contributors)]"
+
 if [ "$(git status --porcelain | grep -v '??')" != "" ]; then
   echo "Error: git working directory not clean -- run 'git status' for more info."
   exit 1
@@ -27,7 +32,7 @@ npm run prepublish
 npm version "$@" -m "v%s"
 trap cleanup INT
 read -p "Press [Enter] to publish this release..."
-git push --tags
+git push && git push --tags
 npm publish
 
 $(dirname $0)/deploy-gh-pages.sh

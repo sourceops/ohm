@@ -12,9 +12,9 @@ var pexprs = require('./pexprs');
 // Operations
 // --------------------------------------------------------------------
 
-pexprs.PExpr.prototype.check = common.abstract;
+pexprs.PExpr.prototype.check = common.abstract('check');
 
-pexprs.anything.check = function(grammar, vals) {
+pexprs.any.check = function(grammar, vals) {
   return vals.length >= 1;
 };
 
@@ -24,7 +24,7 @@ pexprs.end.check = function(grammar, vals) {
          vals[0].primitiveValue === undefined;
 };
 
-pexprs.Prim.prototype.check = function(grammar, vals) {
+pexprs.Terminal.prototype.check = function(grammar, vals) {
   return vals[0] instanceof nodes.Node &&
          vals[0].isTerminal() &&
          vals[0].primitiveValue === this.obj;
@@ -95,29 +95,8 @@ pexprs.Not.prototype.check = function(grammar, vals) {
 };
 
 pexprs.Lookahead.prototype.check =
-pexprs.Lex.prototype.check =
-pexprs.Arr.prototype.check =
-pexprs.Str.prototype.check = function(grammar, vals) {
+pexprs.Lex.prototype.check = function(grammar, vals) {
   return this.expr.check(grammar, vals);
-};
-
-pexprs.Obj.prototype.check = function(grammar, vals) {
-  var fixedArity = this.getArity();
-  if (this.isLenient) {
-    fixedArity--;
-  }
-
-  var pos = 0;
-  for (var i = 0; i < fixedArity; i++) {
-    var pattern = this.properties[i].pattern;
-    if (pattern.check(grammar, vals.slice(pos))) {
-      pos += pattern.getArity();
-    } else {
-      return false;
-    }
-  }
-
-  return this.isLenient ? typeof vals[pos] === 'object' && vals[pos] : true;
 };
 
 pexprs.Apply.prototype.check = function(grammar, vals) {
@@ -130,7 +109,7 @@ pexprs.Apply.prototype.check = function(grammar, vals) {
   // TODO: think about *not* doing the following checks, i.e., trusting that the rule
   // was correctly constructed.
   var ruleNode = vals[0];
-  var body = grammar.ruleDict[this.ruleName];
+  var body = grammar.rules[this.ruleName].body;
   return body.check(grammar, ruleNode.children) && ruleNode.numChildren() === body.getArity();
 };
 

@@ -11,13 +11,16 @@ var pexprs = require('./pexprs');
 // Operations
 // --------------------------------------------------------------------
 
-// NOTE: the `introduceParams` method modifies the receiver in place.
+/*
+  Called at grammar creation time to rewrite a rule body, replacing each reference to a formal
+  parameter with a `Param` node. Returns a PExpr -- either a new one, or the original one if
+  it was modified in place.
+*/
+pexprs.PExpr.prototype.introduceParams = common.abstract('introduceParams');
 
-pexprs.PExpr.prototype.introduceParams = common.abstract;
-
-pexprs.anything.introduceParams =
+pexprs.any.introduceParams =
 pexprs.end.introduceParams =
-pexprs.Prim.prototype.introduceParams =
+pexprs.Terminal.prototype.introduceParams =
 pexprs.Range.prototype.introduceParams =
 pexprs.Param.prototype.introduceParams =
 pexprs.UnicodeChar.prototype.introduceParams = function(formals) {
@@ -41,30 +44,22 @@ pexprs.Seq.prototype.introduceParams = function(formals) {
 pexprs.Iter.prototype.introduceParams =
 pexprs.Not.prototype.introduceParams =
 pexprs.Lookahead.prototype.introduceParams =
-pexprs.Lex.prototype.introduceParams =
-pexprs.Arr.prototype.introduceParams =
-pexprs.Str.prototype.introduceParams = function(formals) {
+pexprs.Lex.prototype.introduceParams = function(formals) {
   this.expr = this.expr.introduceParams(formals);
-  return this;
-};
-
-pexprs.Obj.prototype.introduceParams = function(formals) {
-  this.properties.forEach(function(property, idx) {
-    property.pattern = property.pattern.introduceParams(formals);
-  });
   return this;
 };
 
 pexprs.Apply.prototype.introduceParams = function(formals) {
   var index = formals.indexOf(this.ruleName);
   if (index >= 0) {
-    if (this.params.length > 0) {
-      throw new Error('FIXME: should catch this earlier');
+    if (this.args.length > 0) {
+      // TODO: Should this be supported? See issue #64.
+      throw new Error('Parameterized rules cannot be passed as arguments to another rule.');
     }
     return new pexprs.Param(index);
   } else {
-    this.params.forEach(function(param, idx, params) {
-      params[idx] = param.introduceParams(formals);
+    this.args.forEach(function(arg, idx, args) {
+      args[idx] = arg.introduceParams(formals);
     });
     return this;
   }

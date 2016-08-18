@@ -2,15 +2,17 @@
 
 var inherits = require('inherits');
 
+var common = require('./common');
+
 // --------------------------------------------------------------------
 // Private stuff
 // --------------------------------------------------------------------
 
-function Node(grammar, ctorName, children, interval) {
+function Node(grammar, ctorName, children, source) {
   this.grammar = grammar;
   this.ctorName = ctorName;
   this.children = children;
-  this.interval = interval;
+  this.source = source;
 }
 
 Node.prototype.numChildren = function() {
@@ -87,14 +89,28 @@ Node.prototype.isTerminal = function() {
   return false;
 };
 
+Node.prototype.isNonterminal = function() {
+  return false;
+};
+
+Node.prototype.isIteration = function() {
+  return false;
+};
+
+Node.prototype.isOptional = function() {
+  return false;
+};
+
 Node.prototype.toJSON = function() {
   var r = {};
   r[this.ctorName] = this.children;
   return r;
 };
 
-function TerminalNode(grammar, value, interval) {
-  Node.call(this, grammar, '_terminal', [], interval);
+// Terminals
+
+function TerminalNode(grammar, value, source) {
+  Node.call(this, grammar, '_terminal', [], source);
   this.primitiveValue = value;
 }
 inherits(TerminalNode, Node);
@@ -103,8 +119,54 @@ TerminalNode.prototype.isTerminal = function() {
   return true;
 };
 
+TerminalNode.prototype.toJSON = function() {
+  var r = {};
+  r[this.ctorName] = this.primitiveValue;
+  return r;
+};
+
+// Nonterminals
+
+function NonterminalNode(grammar, ruleName, children, source) {
+  Node.call(this, grammar, ruleName, children, source);
+}
+inherits(NonterminalNode, Node);
+
+NonterminalNode.prototype.isNonterminal = function() {
+  return true;
+};
+
+NonterminalNode.prototype.isLexical = function() {
+  return common.isLexical(this.ctorName);
+};
+
+NonterminalNode.prototype.isSyntactic = function() {
+  return common.isSyntactic(this.ctorName);
+};
+
+// Iterations
+
+function IterationNode(grammar, children, source, optional) {
+  Node.call(this, grammar, '_iter', children, source);
+  this.optional = optional;
+}
+inherits(IterationNode, Node);
+
+IterationNode.prototype.isIteration = function() {
+  return true;
+};
+
+IterationNode.prototype.isOptional = function() {
+  return this.optional;
+};
+
 // --------------------------------------------------------------------
 // Exports
 // --------------------------------------------------------------------
 
-module.exports = {Node: Node, TerminalNode: TerminalNode};
+module.exports = {
+  Node: Node,
+  TerminalNode: TerminalNode,
+  NonterminalNode: NonterminalNode,
+  IterationNode: IterationNode
+};

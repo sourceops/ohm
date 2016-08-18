@@ -3,12 +3,14 @@
 'use strict';
 
 var assert = require('assert');
+var fs = require('fs');
 var join = require('path').join;
 var ohm = require('../..');
 
-var g = ohm.grammarFromFile(join(__dirname, 'csv.ohm'));
+var contents = fs.readFileSync(join(__dirname, 'csv.ohm'));
+var g = ohm.grammar(contents);
 
-var semantics = g.semantics().addOperation('value', {
+var semantics = g.createSemantics().addOperation('value', {
   csv: function(r, _, rs, eol) {
     return [r.value()].concat(rs.value());
   },
@@ -16,7 +18,7 @@ var semantics = g.semantics().addOperation('value', {
     return [c.value()].concat(cs.value());
   },
   col: function(_) {
-    return this.interval.contents;
+    return this.sourceString;
   }
 });
 

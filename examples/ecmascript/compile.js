@@ -37,6 +37,8 @@ function loadModule(name) {
 // Main
 // --------------------------------------------------------------------
 
+/* eslint-disable no-console */
+
 function compile(args) {
   var filenames = [];
   var opts = {
@@ -69,13 +71,14 @@ function compile(args) {
   var results = [];
   var succeeded = files.every(function(arr) {
     var source = arr[1] || removeShebang(fs.readFileSync(arr[0]).toString());
-    if (opts.v) { console.log(arr[0]); }
+    if (opts.v) { console.error(arr[0]); }
     var result = lang.grammar.match(source, 'Program');
     if (result.succeeded()) {
       results.push(result);
       return true;
     }
-    console.log(arr[0] + ':\n' + result.message);
+    console.error(arr[0] + ':\n' + result.message);
+    return false;
   });
 
   if (succeeded) {
@@ -87,14 +90,14 @@ function compile(args) {
     results.forEach(function(r) { code += ';\n' + lang.semantics(r).asES5; });
     if (opts.b) {
       console.error('Codegen:', (Date.now() - codegenStartTime) + 'ms');
-    } else {
-      console.log(code);
     }
+    return code;
   }
+  return null;
 }
 
 module.exports = compile;
 
 if (require.main === module) {
-  compile(process.argv.slice(2));
+  console.log(compile(process.argv.slice(2)));
 }

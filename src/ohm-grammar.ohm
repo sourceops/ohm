@@ -10,9 +10,16 @@ Ohm {
     = "<:" ident
 
   Rule
-    = ident Formals? ruleDescr? "="  Alt  -- define
-    | ident Formals?            ":=" Alt  -- override
-    | ident Formals?            "+=" Alt  -- extend
+    = ident Formals? ruleDescr? "="  RuleBody  -- define
+    | ident Formals?            ":=" RuleBody  -- override
+    | ident Formals?            "+=" RuleBody  -- extend
+
+  RuleBody
+    = "|"? NonemptyListOf<TopLevelTerm, "|">
+
+  TopLevelTerm
+    = Seq caseName  -- inline
+    | Seq
 
   Formals
     = "<" ListOf<ident, ","> ">"
@@ -21,11 +28,7 @@ Ohm {
     = "<" ListOf<Seq, ","> ">"
 
   Alt
-    = Term ("|" Term)*
-
-  Term
-    = Seq caseName -- inline
-    | Seq
+    = NonemptyListOf<Seq, "|">
 
   Seq
     = Iter*
@@ -47,30 +50,15 @@ Ohm {
 
   Base
     = ident Params? ~(ruleDescr? "=" | ":=" | "+=")  -- application
-    | Prim ".." Prim                                 -- range
-    | Prim                                           -- prim
+    | terminal ".." terminal                         -- range
+    | terminal                                       -- terminal
     | "(" Alt ")"                                    -- paren
-    | "[" Alt "]"                                    -- arr
-    | "``" Alt "''"                                  -- str
-    | "{" "..."? "}"                                 -- obj
-    | "{" Props ("," "...")? "}"                     -- objWithProps
-
-  Prim
-    = keyword
-    | string
-    | number
-
-  Props
-    = Prop ("," Prop)*
-
-  Prop
-    = (name | string) ":" Alt
 
   ruleDescr  (a rule description)
     = "(" ruleDescrText ")"
 
   ruleDescrText
-    = (~")" _)*
+    = (~")" any)*
 
   caseName
     = "--" (~"\n" space)* name (~"\n" space)* ("\n" | &"}")
@@ -87,19 +75,14 @@ Ohm {
     | alnum
 
   ident  (an identifier)
-    = ~keyword name
+    = name
 
-  keyword
-    = "null" ~nameRest   -- null
-    | "true" ~nameRest   -- true
-    | "false" ~nameRest  -- false
+  terminal
+    = "\"" terminalChar* "\""
 
-  string
-    = "\"" strChar* "\""
-
-  strChar
+  terminalChar
     = escapeChar
-    | ~"\\" ~"\"" ~"\n" _
+    | ~"\\" ~"\"" ~"\n" any
 
   escapeChar  (an escape sequence)
     = "\\\\"                                     -- backslash
@@ -112,11 +95,18 @@ Ohm {
     | "\\u" hexDigit hexDigit hexDigit hexDigit  -- unicodeEscape
     | "\\x" hexDigit hexDigit                    -- hexEscape
 
-  number  (a number)
-    = "-"? digit+
-
   space
-   += "//" (~"\n" _)* "\n"  -- singleLine
-    | "/*" (~"*/" _)* "*/"  -- multiLine
+   += comment
 
+  comment
+    = "//" (~"\n" any)* "\n"  -- singleLine
+    | "/*" (~"*/" any)* "*/"  -- multiLine
+
+  tokens = token*
+
+  token = caseName | comment | ident | operator | punctuation | terminal | any
+
+  operator = "<:" | "=" | ":=" | "+=" | "*" | "+" | "?" | "~" | "&"
+
+  punctuation = "<" | ">" | "," | "--"
 }

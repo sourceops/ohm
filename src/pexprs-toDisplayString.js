@@ -12,36 +12,29 @@ var pexprs = require('./pexprs');
 // --------------------------------------------------------------------
 
 // Returns a string representing the PExpr, for use as a UI label, etc.
-pexprs.PExpr.prototype.toDisplayString = common.abstract;
+pexprs.PExpr.prototype.toDisplayString = common.abstract('toDisplayString');
 
 pexprs.Alt.prototype.toDisplayString =
 pexprs.Seq.prototype.toDisplayString =
 pexprs.Iter.prototype.toDisplayString =
 pexprs.Not.prototype.toDisplayString =
 pexprs.Lookahead.prototype.toDisplayString =
-pexprs.Lex.prototype.toDisplayString =
-pexprs.Arr.prototype.toDisplayString =
-pexprs.Str.prototype.toDisplayString =
-pexprs.Obj.prototype.toDisplayString = function() {
-  if (this.interval) {
-    return this.interval.trimmed().contents;
+pexprs.Lex.prototype.toDisplayString = function() {
+  if (this.source) {
+    return this.source.trimmed().contents;
   }
   return '[' + this.constructor.name + ']';
 };
 
-pexprs.anything.toDisplayString = function() {
-  return '_';
+pexprs.any.toDisplayString = function() {
+  return 'any';
 };
 
 pexprs.end.toDisplayString = function() {
   return 'end';
 };
 
-pexprs.Prim.prototype.toDisplayString = function() {
-  return String(this.obj);
-};
-
-pexprs.StringPrim.prototype.toDisplayString = function() {
+pexprs.Terminal.prototype.toDisplayString = function() {
   return JSON.stringify(this.obj);
 };
 
@@ -54,7 +47,7 @@ pexprs.Param.prototype.toDisplayString = function() {
 };
 
 pexprs.Apply.prototype.toDisplayString = function() {
-  return this.ruleName;
+  return this.toString();
 };
 
 pexprs.UnicodeChar.prototype.toDisplayString = function() {

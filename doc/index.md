@@ -25,23 +25,6 @@ assert(!g.match('lmao').failed());
 assert(g.match('loooooool').succeeded());
 ```
 
-### Matching Objects
-
-You can match against arbitrary objects (not just strings):
-
-```js
-var g = ohm.grammar('Named { named = { name: _, ... } }');
-assert(g.match({name: 'Manuel', age: 29}).succeeded());
-assert(g.match({}).failed());
-```
-
-Arrays, numbers, and `null` are all valid patterns:
-
-```js
-var g = ohm.grammar('G { start = [13 null] }');
-assert(g.match([13, null]).succeeded());
-```
-
 ### Implementing Semantics
 
 You can use _operations_ and _attributes_ to analyze and extract values from parsed data. For example, take the following grammar in `arithmetic.ohm`:
@@ -79,11 +62,12 @@ We can create an operation named 'eval' to evaluate arithmetic expressions that 
 
 ```js
 // Instantiate the grammar.
-var g = ohm.grammarFromFile('arithmetic.ohm');
+var fs = require('fs');
+var g = ohm.grammar(fs.readFileSync('arithmetic.ohm'));
 
 // Create an operation that evaluates the expression. An operation always belongs to a Semantics,
 // which is a family of related operations and attributes for a particular grammar.
-var semantics = g.semantics().addOperation('eval', {
+var semantics = g.createSemantics().addOperation('eval', {
   Exp: function(e) {
     return e.eval();
   },
@@ -103,7 +87,7 @@ var semantics = g.semantics().addOperation('eval', {
     return exp.eval();
   },
   number: function(chars) {
-    return parseInt(this.interval.contents, 10);
+    return parseInt(this.sourceString, 10);
   },
 });
 var match = g.match('1 + (2 - 3) + 4');

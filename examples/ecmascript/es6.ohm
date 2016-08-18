@@ -1,19 +1,18 @@
 ES6 <: ES5 {
-  AssignmentExpression
-    := ArrowFunction
-     | LeftHandSideExpression AssignmentOperator AssignmentExpression -- assignment
-     | ConditionalExpression
+  AssignmentExpression<guardIn> += ArrowFunction<guardIn>
 
-  ArrowFunction = ArrowParameters /* no newline */ "=>" ConciseBody
+  ArrowFunction<guardIn> = ArrowParameters<guardIn> #(spacesNoNL "=>") ConciseBody<guardIn>
 
-  ConciseBody = ~"{" AssignmentExpression  -- noBraces
-              | "{" FunctionBody "}"       -- withBraces
+  ConciseBody<guardIn> = ~"{" AssignmentExpression<guardIn>  -- noBraces
+                       | "{" FunctionBody "}"                -- withBraces
 
-  ArrowParameters = identifier /* TODO: Should be BindingIdentifier. */  -- unparenthesized
-                  | CoverParenthesizedExpressionAndArrowParameterList
+  ArrowParameters<guardIn> = BindingIdentifier<guardIn>  -- unparenthesized
+                           | CoverParenthesizedExpressionAndArrowParameterList<guardIn>
 
-  CoverParenthesizedExpressionAndArrowParameterList
-    = "(" Expression ")"           -- expression
+  BindingIdentifier<guardIn> = identifier  // TODO: Implement this properly.
+
+  CoverParenthesizedExpressionAndArrowParameterList<guardIn>
+    = "(" Expression<guardIn> ")"  -- expression
     | "(" ")"                      -- parens
     | "(" FormalParameterList ")"  -- params
 }

@@ -4,111 +4,80 @@
 // Imports
 // --------------------------------------------------------------------
 
-var InputStream = require('./InputStream');
-var Interval = require('./Interval');
 var MatchResult = require('./MatchResult');
 var Semantics = require('./Semantics');
 var State = require('./State');
 var common = require('./common');
 var errors = require('./errors');
-var nodes = require('./nodes');
 var pexprs = require('./pexprs');
 
 // --------------------------------------------------------------------
 // Private stuff
 // --------------------------------------------------------------------
 
-function Grammar(name, superGrammar, ruleDict, optDefaultStartRule) {
+function Grammar(
+    name,
+    superGrammar,
+    rules,
+    optDefaultStartRule) {
   this.name = name;
   this.superGrammar = superGrammar;
-  this.ruleDict = ruleDict;
+  this.rules = rules;
   if (optDefaultStartRule) {
-    if (!(optDefaultStartRule in ruleDict)) {
+    if (!(optDefaultStartRule in rules)) {
       throw new Error("Invalid start rule: '" + optDefaultStartRule +
                       "' is not a rule in grammar '" + name + "'");
     }
     this.defaultStartRule = optDefaultStartRule;
   }
-  this.constructors = this.ctors = this.createConstructors();
 }
 
+var ohmGrammar;
+var buildGrammar;
+
+// This method is called from main.js once Ohm has loaded.
+Grammar.initApplicationParser = function(grammar, builderFn) {
+  ohmGrammar = grammar;
+  buildGrammar = builderFn;
+};
+
 Grammar.prototype = {
-  construct: function(ruleName, children) {
-    var body = this.ruleDict[ruleName];
-    if (!body || !body.check(this, children) || children.length !== body.getArity()) {
-      throw new errors.InvalidConstructorCall(this, ruleName, children);
-    }
-    var interval = new Interval(InputStream.newFor(children), 0, children.length);
-    return new nodes.Node(this, ruleName, children, interval);
-  },
-
-  createConstructors: function() {
-    var self = this;
-    var constructors = {};
-
-    function makeConstructor(ruleName) {
-      return function(/* val1, val2, ... */) {
-        return self.construct(ruleName, Array.prototype.slice.call(arguments));
-      };
-    }
-
-    for (var ruleName in this.ruleDict) {
-      // We want *all* properties, not just own properties, because of
-      // supergrammars.
-      constructors[ruleName] = makeConstructor(ruleName);
-    }
-    return constructors;
-  },
-
   // Return true if the grammar is a built-in grammar, otherwise false.
   // NOTE: This might give an unexpected result if called before BuiltInRules is defined!
   isBuiltIn: function() {
     return this === Grammar.ProtoBuiltInRules || this === Grammar.BuiltInRules;
   },
 
-  match: function(obj, optStartRule) {
-    var startRule = optStartRule || this.defaultStartRule;
-    if (!startRule) {
-      throw new Error('Missing start rule argument -- the grammar has no default start rule.');
-    }
-    var state = this._match(obj, startRule, false);
-    return MatchResult.newFor(state);
-  },
-
-  _match: function(obj, startRule, tracingEnabled) {
-    var inputStream = InputStream.newFor(typeof obj === 'string' ? obj : [obj]);
-    var state = new State(this, inputStream, startRule, tracingEnabled);
-    var succeeded = new pexprs.Apply(startRule).eval(state);
-    if (succeeded) {
-      // Link every CSTNode to its parent.
-      var stack = [undefined];
-      var helpers = this.semantics().addOperation('setParents', {
-        _default: function(children) {
-          stack.push(this._node);
-          children.forEach(function(child) { child.setParents(); });
-          stack.pop();
-          this._node.parent = stack[stack.length - 1];
-        }
-      });
-      helpers(MatchResult.newFor(state)).setParents();
-    }
+  _match: function(input, opts) {
+    var state = new State(this, input, opts);
+    state.evalFromStart();
     return state;
   },
 
-  trace: function(obj, optStartRule) {
-    var startRule = optStartRule || this.defaultStartRule;
-    if (!startRule) {
-      throw new Error('Missing start rule argument -- the grammar has no default start rule.');
-    }
-    var state = this._match(obj, startRule, true);
+  match: function(input, optStartApplication) {
+    var state = this._match(input, {startApplication: optStartApplication});
+    return MatchResult.newFor(state);
+  },
 
-    var rootTrace = state.trace[0];
+  trace: function(input, optStartApplication) {
+    var state = this._match(input, {startApplication: optStartApplication, trace: true});
+
+    // The trace node for the start rule is always the last entry. If it is a syntactic rule,
+    // the first entry is for an application of 'spaces'.
+    // TODO(pdubroy): Clean this up by introducing a special `Match<startAppl>` rule, which will
+    // ensure that there is always a single root trace node.
+    var rootTrace = state.trace[state.trace.length - 1];
     rootTrace.state = state;
     rootTrace.result = MatchResult.newFor(state);
     return rootTrace;
   },
 
   semantics: function() {
+    // TODO: Remove this eventually! Deprecated in v0.12.
+    throw new Error('semantics() is deprecated -- use createSemantics() instead.');
+  },
+
+  createSemantics: function() {
     return Semantics.createSemantics(this);
   },
 
@@ -126,7 +95,7 @@ Grammar.prototype = {
     var problems = [];
     for (var k in actionDict) {
       var v = actionDict[k];
-      if (!isSpecialAction(k) && !(k in this.ruleDict)) {
+      if (!isSpecialAction(k) && !(k in this.rules)) {
         problems.push("'" + k + "' is not a valid semantic action for '" + this.name + "'");
       } else if (typeof v !== 'function') {
         problems.push(
@@ -159,7 +128,7 @@ Grammar.prototype = {
     } else if (actionName === '_terminal') {
       return 0;
     }
-    return this.ruleDict[actionName].getArity();
+    return this.rules[actionName].body.getArity();
   },
 
   _inheritsFrom: function(grammar) {
@@ -174,49 +143,62 @@ Grammar.prototype = {
   },
 
   toRecipe: function(optVarName) {
-    if (this.isBuiltIn()) {
-      throw new Error(
-          'Why would anyone want to generate a recipe for the ' + this.name + ' grammar?!?!');
+    var metaInfo = {};
+    // Include the grammar source if it is available.
+    if (this.source) {
+      metaInfo.source = this.source.contents;
     }
 
-    var sb = new common.StringBuffer();
-    if (optVarName) {
-      sb.append('var ' + optVarName + ' = ');
+    var superGrammar = null;
+    if (this.superGrammar && !this.superGrammar.isBuiltIn()) {
+      superGrammar = JSON.parse(this.superGrammar.toRecipe());
     }
-    sb.append('(function() {\n');
 
-    // Include the supergrammar in the recipe if it's not a built-in grammar.
-    var superGrammarDecl = '';
-    if (!this.superGrammar.isBuiltIn()) {
-      sb.append(this.superGrammar.toRecipe('buildSuperGrammar'));
-      superGrammarDecl = '    .withSuperGrammar(buildSuperGrammar.call(this))\n';
-    }
-    sb.append('  return new this.newGrammar(' + JSON.stringify(this.name) + ')\n');
-    sb.append(superGrammarDecl);
-
+    var startRule = null;
     if (this.defaultStartRule) {
-      sb.append("    .withDefaultStartRule('" + this.defaultStartRule + "')\n");
+      startRule = this.defaultStartRule;
     }
 
+    var rules = {};
     var self = this;
-    Object.keys(this.ruleDict).forEach(function(ruleName) {
-      var body = self.ruleDict[ruleName];
-      sb.append('    .');
-      if (self.superGrammar.ruleDict[ruleName]) {
-        sb.append(body instanceof pexprs.Extend ? 'extend' : 'override');
+    Object.keys(this.rules).forEach(function(ruleName) {
+      var ruleInfo = self.rules[ruleName];
+      var body = ruleInfo.body;
+      var isDefinition = !self.superGrammar || !self.superGrammar.rules[ruleName];
+
+      var operation;
+      if (isDefinition) {
+        operation = 'define';
       } else {
-        sb.append('define');
+        operation = body instanceof pexprs.Extend ? 'extend' : 'override';
       }
-      var formals = '[' + body.formals.map(JSON.stringify).join(', ') + ']';
-      sb.append('(' + JSON.stringify(ruleName) + ', ' + formals + ', ');
-      body.outputRecipe(sb, body.formals);
-      if (body.description) {
-        sb.append(', ' + JSON.stringify(body.description));
+
+      var metaInfo = {};
+      if (ruleInfo.source && self.source) {
+        var adjusted = ruleInfo.source.relativeTo(self.source);
+        metaInfo.sourceInterval = [adjusted.startIdx, adjusted.endIdx];
       }
-      sb.append(')\n');
+
+      var description = isDefinition ? ruleInfo.description : null;
+      var bodyRecipe = body.outputRecipe(ruleInfo.formals, self.source);
+
+      rules[ruleName] = [
+        operation, // "define"/"extend"/"override"
+        metaInfo,
+        description,
+        ruleInfo.formals,
+        bodyRecipe
+      ];
     });
-    sb.append('    .build();\n});\n');
-    return sb.contents();
+
+    return JSON.stringify([
+      'grammar',
+      metaInfo,
+      this.name,
+      superGrammar,
+      startRule,
+      rules
+    ]);
   },
 
   // TODO: Come up with better names for these methods.
@@ -236,12 +218,8 @@ Grammar.prototype = {
     sb.append('{');
 
     var first = true;
-    for (var ruleName in this.ruleDict) {
-      if (ruleName === 'spaces_') {
-        // This rule is not for the user, it's more of an implementation detail of syntactic rules.
-        continue;
-      }
-      var body = this.ruleDict[ruleName];
+    for (var ruleName in this.rules) {
+      var body = this.rules[ruleName].body;
       if (first) {
         first = false;
       } else {
@@ -263,6 +241,31 @@ Grammar.prototype = {
     sb.append(common.repeat('_', arity).join(', '));
     sb.append(') {\n');
     sb.append('  }');
+  },
+
+  // Parse a string which expresses a rule application in this grammar, and return the
+  // resulting Apply node.
+  parseApplication: function(str) {
+    var app;
+    if (str.indexOf('<') === -1) {
+      // simple application
+      app = new pexprs.Apply(str);
+    } else {
+      // parameterized application
+      var cst = ohmGrammar.match(str, 'Base_application');
+      app = buildGrammar(cst, {});
+    }
+
+    // Ensure that the application is valid.
+    if (!(app.ruleName in this.rules)) {
+      throw errors.undeclaredRule(app.ruleName, this.name);
+    }
+    var formals = this.rules[app.ruleName].formals;
+    if (formals.length !== app.args.length) {
+      var source = this.rules[app.ruleName].source;
+      throw errors.wrongNumberOfParameters(app.ruleName, formals.length, app.args.length, source);
+    }
+    return app;
   }
 };
 
@@ -271,27 +274,49 @@ Grammar.prototype = {
 // `BuiltInRules`. That grammar contains several convenience rules, e.g., `letter` and
 // `digit`, and is implicitly the super-grammar of any grammar whose super-grammar
 // isn't specified.
-Grammar.ProtoBuiltInRules = new Grammar('ProtoBuiltInRules', undefined, {
-  // The following rules can't be written in userland because they reference
-  // `anything` and `end` directly.
-  _: pexprs.anything.withFormals([]),
-  end: pexprs.end.withFormals([]),
+Grammar.ProtoBuiltInRules = new Grammar(
+  'ProtoBuiltInRules',  // name
+  undefined,  // supergrammar
+  {
+    // The following rules can't be written in userland because they reference
+    // `any` and `end` directly.
+    any: {body: pexprs.any, formals: [], description: 'any object'},
+    end: {body: pexprs.end, formals: [], description: 'end of input'},
 
-  // The following rule is part of the Ohm implementation. Its name ends with '_' to
-  // discourage programmers from invoking, extending, and overriding it.
-  spaces_: new pexprs.Star(new pexprs.Apply('space')).withFormals([]),
+    // The following rule is invoked implicitly by syntactic rules to skip spaces.
+    spaces: {
+      body: new pexprs.Star(new pexprs.Apply('space')),
+      formals: []
+    },
 
-  // The `space` rule must be defined here because it's referenced by `spaces_`.
-  space: new pexprs.Range('\x00', ' ').withFormals([]).withDescription('a space'),
+    // The `space` rule must be defined here because it's referenced by `spaces`.
+    space: {
+      body: new pexprs.Range('\x00', ' '),
+      formals: [],
+      description: 'a space'
+    },
 
-  // These rules are implemented natively because they use UnicodeChar directly, which is
-  // not part of the Ohm grammar.
-  lower: new pexprs.UnicodeChar('Ll').withFormals([]).withDescription('a lowercase letter'),
-  upper: new pexprs.UnicodeChar('Lu').withFormals([]).withDescription('an uppercase letter'),
+    // These rules are implemented natively because they use UnicodeChar directly, which is
+    // not part of the Ohm grammar.
+    lower: {
+      body: new pexprs.UnicodeChar('Ll'),
+      formals: [],
+      description: 'a lowercase letter'
+    },
+    upper: {
+      body: new pexprs.UnicodeChar('Lu'),
+      formals: [],
+      description: 'an uppercase letter'
+    },
 
-  // The union of Lt (titlecase), Lm (modifier), and Lo (other), i.e. any letter not in Ll or Lu.
-  unicodeLtmo: new pexprs.UnicodeChar('Ltmo').withFormals([])
-});
+    // The union of Lt (titlecase), Lm (modifier), and Lo (other), i.e. any letter not
+    // in Ll or Lu.
+    unicodeLtmo: {
+      body: new pexprs.UnicodeChar('Ltmo'),
+      formals: []
+    }
+  }
+);
 
 // --------------------------------------------------------------------
 // Exports
